@@ -5,14 +5,16 @@ import os
 import sys
 import socket
 import atexit
+import argparse
 import mimetypes
 mimetypes.init()
 import threading
 from time import sleep
-from http import HTTPStatus as codes
 from datetime import datetime
+from urllib.parse import urlparse, urlunparse, quote, unquote
+from http import HTTPStatus as codes
 
-__version__ = (0, 1, 0)
+__version__ = (0, 2, 0)
 __version_info__ = ".".join(map(str, __version__))
 
 APP_NAME = "snakeserver"
@@ -20,9 +22,6 @@ APP_AUTHOR = "bell345"
 APP_VERSION = __version_info__
 PYTHON_VERSION = ".".join(map(str, sys.version_info[:3]))
 
-HOST = ""
-PORT = 8086
-MAX_CONNECTIONS = 10
 HTTP_CODES = {
     100: "Continue",
     101: "Switching Protocols",
@@ -96,11 +95,13 @@ class Response:
         if self.status_sent:
             raise ProtocolError("The status code has already been sent!")
 
+        self.status_code = code
+        self.status_message = HTTP_CODES.get(code, "Unimplemented Status Code")
         status_line = "HTTP/{} {} {}\r\n".format(
-            self.request.version, code, HTTP_CODES.get(code, "Unimplemented Status Code")).encode("ascii")
+            self.request.version, self.status_code, self.status_message).encode("ascii")
         success = self.write(status_line)
 
-        print("Sent response: {}".format(status_line))
+        print("send <{}:{}>: {}".format(self.addr[0], self.addr[1], status_line.decode("ascii").strip("\r\n"), repr(self.request)))
 
         if success:
             self.status_sent = True
@@ -153,6 +154,8 @@ class Response:
                 payload = payload.encode("utf-8")
 
             self.conn.sendall(payload)
+            print("send <{}:{}>: {} {} bytes".format(
+                self.addr[0], self.addr[1], self.headers.get("Content-Type"), self.headers.get("Content-Length")))
 
         self.body_sent = True
         return self
@@ -174,22 +177,23 @@ class Request:
         self.version = "1.0"
         self.raw = b''
         self.payload = b''
+        self.host = ""
+        self.port = -1
         self.headers = {}
 
+        self.processed = False
+
         req = self._recv_request()
-        if not req: return None
+        if not req: return
 
         success = self._parse_headers(req)
-        if not success: return None
-
-        if self.version >= "1.1" and "Host" not in self.headers:
-            self.response.status(codes.BAD_REQUEST).send("Host header required\r\n")
-            self.server.close()
-            return None
+        if not success: return
 
         if "Content-Length" in self.headers:
             success = self._recv_payload(self.headers)
-            if self.get("Content-Length") != "0" and not success: return None
+            if self.get("Content-Length") != "0" and not success: return
+
+        self.processed = True
 
     def get(self, key, default=None):
         if key in self.headers:
@@ -211,7 +215,7 @@ class Request:
                 print(e, file=sys.stderr)
                 return b''
 
-            #print("Got data: {}".format(new_data)) # don't remove
+            # print("Got data: {}".format(new_data)) # don't remove
             buf += new_data
             if not new_data or (max_length != -1 and len(new_data) < buffer_size):
                 break
@@ -221,7 +225,6 @@ class Request:
     def _recv_request(self):
         req = self.consume(until=BLANK_LINE_RE)
         if not req: return None
-        print("Request received: {}".format(NEWLINE_RE.split(req, 1)[0]))
         self.raw += req
 
         payload = b''
@@ -239,7 +242,9 @@ class Request:
             self.server.close()
             return False
 
-        self.payload += self.consume(max_length=max(-1, content_length - len(payload)))
+        new_data = self.consume(max_length=max(-1, content_length - len(payload)))
+        self.raw += new_data
+        self.payload += new_data
 
         if len(self.payload) < content_length:
             return False
@@ -254,11 +259,31 @@ class Request:
             if not self.version:
                 self.version = "1.0"
 
+            urlparts = urlparse(self.fullpath)
+            getpart = lambda name: unquote(getattr(urlparts, name))
+            self.path, self.query, self.fragment = \
+                getpart("path"), getpart("query"), getpart("fragment")
+
             self.headers = {}
             for line in lines[1:]:
                 if not line: break
                 key, value = re.split(rb': *', line, 1)
                 self.headers[key.title().decode("ascii")] = value.decode("ascii")
+
+            if self.version >= "1.1" and "Host" not in self.headers:
+                self.response.status(codes.BAD_REQUEST).send("Host header required\r\n")
+                self.server.close()
+                return False
+
+            host = self.headers.get("Host", ":".join(map(str, self.conn.getsockname())))
+            if ":" not in host:
+                host += ":80"
+
+            self.host, self.port = host.split(":", 1)
+            self.port = int(self.port)
+
+            port_url = ":{}".format(self.port) if self.port != 80 else ""
+            self.url = "http://" + self.host + port_url + self.fullpath
 
         except (IndexError, ValueError, UnicodeDecodeError, AttributeError) as e:
             self.response.status(codes.BAD_REQUEST).send("Malformed headers\r\n")
@@ -266,6 +291,26 @@ class Request:
             return False
 
         return True
+
+    def __str__(self):
+        if self.method and self.fullpath:
+            return "{} {} HTTP/{}".format(self.method, self.fullpath, self.version)
+        else:
+            return repr(self)
+
+    def __repr__(self):
+        props = {}
+        if self.method: props["method"] = self.method
+        if self.fullpath: props["fullpath"] = self.fullpath
+        if self.host: props["host"] = "{}:{}".format(self.host, self.port)
+        props["source"] = "{}:{}".format(*self.addr)
+
+        props_str = ", ".join(map(lambda i: "{}={}".format(*i), props.items()))
+
+        return "<Request {}>".format(props_str)
+
+    def __bool__(self):
+        return self.processed
 
 class Route:
     @staticmethod
@@ -302,12 +347,13 @@ class HTTPServer:
                 break
 
             if not req: break
+            print("recv <{}:{}>: {}".format(self.addr[0], self.addr[1], str(req)))
             res = req.response
 
             try:
                 if req.method == "GET":
-                    static_path = os.path.join(*req.fullpath.lstrip("/").split("/"))
-                    static_prefix = "/srv/http/80/"
+                    static_prefix = "/srv/http/80"
+                    static_path = os.path.join(*urlparse(req.fullpath).path.split("/"))
                     path = os.path.join(static_prefix, static_path)
 
                     if os.path.isdir(path):
@@ -322,6 +368,7 @@ class HTTPServer:
 
                     mime, encoding = mimetypes.guess_type(path)
                     modtime = datetime.fromtimestamp(int(os.path.getmtime(path)))
+                    res.set("Last-Modified", htmltime(modtime))
 
                     if req.get("If-Modified-Since"):
                         expect = fromhtmltime(req.get("If-Modified-Since"))
@@ -331,7 +378,6 @@ class HTTPServer:
 
                     with open(path, "rb") as fp:
                         res.set("Content-Type", mime)
-                        res.set("Last-Modified", htmltime(modtime))
                         success = res.send(fp.read())
                         if not success: break
 
@@ -340,7 +386,7 @@ class HTTPServer:
                     #success = res.send(msg)
                     #if not success: break
                 else:
-                    res.status(codes.METHOD_NOT_ALLOWED).send()
+                    res.status(codes.NOT_IMPLEMENTED).set("Allow", "GET").send()
                     break
 
                 if req.headers.get("Connection", "").lower() == "close":
@@ -357,13 +403,15 @@ class HTTPServer:
         return self.close()
 
     def close(self):
+        global servers
         if not self.closed:
-            print("Closing connection")
-            self.conn.close()
             self.closed = True
+            servers = [s for s in servers if s]
+            print("term <{}:{}>: ({} left)".format(self.addr[0], self.addr[1], len(servers)))
+            self.conn.close()
 
     def __bool__(self):
-        return self.closed
+        return not self.closed
 
 sock = None
 def cleanup():
@@ -373,26 +421,46 @@ def cleanup():
 
 atexit.register(cleanup)
 
-try:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((HOST, PORT))
-        sock.listen(MAX_CONNECTIONS)
+def main():
+    global servers
 
-        while True:
-            conn, addr = sock.accept()
-            print("New connection: {}".format(addr))
+    parser = argparse.ArgumentParser(prog=APP_NAME,
+            description="A lightweight multithreaded HTTP server written in Python.",
+            epilog="(C) Thomas Bell 2016, MIT License.")
+    parser.add_argument("--version", action="version", version=APP_VERSION)
 
-            servers = [s for s in servers if s]
-            if len(servers) < MAX_CONNECTIONS:
-                servers.append(HTTPServer(conn, addr))
-            else:
-                try:
-                    code = codes.SERVICE_UNAVAILABLE
-                    conn.sendall("HTTP/1.1 {} {}\r\n\r\n".format(code, HTTP_CODES.get(code, "")).encode("ascii"))
-                    conn.close()
-                except (BrokenPipeError, OSError, socket.timeout):
-                    pass
+    parser.add_argument("-p", "--port", default=8086, type=int,
+            help="A port to listen on for connections. Defaults to port 8086.")
+    parser.add_argument("-H", "--host", default="",
+            help="A hostname or IP address where the server will listen for connections. Defaults to local interfaces.")
+    parser.add_argument("-c", "--connections", default=10,
+            help="The maximum number of connections the server will handle concurrently. Defaults to 10.")
+    parser.add_argument("-t", "--timeout", default=15, type=float,
+            help="The timeout period for new connections in seconds. Defaults to 15 seconds.")
+    args = parser.parse_args()
 
-except (KeyboardInterrupt, SystemExit, Exception) as e:
-    print(e, file=sys.stderr)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((args.host, args.port))
+            sock.listen(args.connections)
+
+            while True:
+                conn, addr = sock.accept()
+
+                if len(servers) < args.connections:
+                    servers.append(HTTPServer(conn, addr, timeout=args.timeout))
+                    print("open <{}:{}>: ({} total)".format(*addr, len(servers)))
+                else:
+                    try:
+                        code = codes.SERVICE_UNAVAILABLE
+                        conn.sendall("HTTP/1.1 {} {}\r\n\r\n".format(code, HTTP_CODES.get(code, "")).encode("ascii"))
+                        conn.close()
+                    except (BrokenPipeError, OSError, socket.timeout):
+                        pass
+
+    except (KeyboardInterrupt, SystemExit, Exception) as e:
+        print(e, file=sys.stderr)
+
+if __name__ == "__main__":
+    main()
