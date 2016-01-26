@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from util import *
 from request import Request
+from router import Router, static, not_found
 
 servers = []
 
@@ -31,6 +32,10 @@ class HTTPServer:
         self.thread.start()
 
     def _worker(self):
+        router = Router()
+        router.use(static("/srv/http/80"))
+        router.use(not_found)
+
         while True:
             try:
                 req = Request(self)
@@ -40,62 +45,10 @@ class HTTPServer:
                 print(e, file=sys.stderr)
                 break
 
-            if not req: break
-            print("recv <{}:{}>: {}".format(self.addr[0], self.addr[1], str(req)))
-            res = req.response
+            if not req or self.closed: break
 
-            try:
-                if req.method in ("GET", "HEAD"):
-                    static_prefix = "/srv/http/80"
-                    static_path = os.path.join(*urlparse(req.fullpath).path.split("/"))
-                    path = os.path.join(static_prefix, static_path)
-
-                    if os.path.isdir(path):
-                        for poss in ["index.html", "index.htm", ""]:
-                            newpath = os.path.join(path, poss)
-                            if os.path.isfile(newpath):
-                                path = newpath
-
-                    if not os.path.isfile(path):
-                        res.status(codes.NOT_FOUND).send()
-                        break
-
-                    mime, encoding = mimetypes.guess_type(path)
-                    modtime = datetime.fromtimestamp(int(os.path.getmtime(path)))
-                    res.set("Last-Modified", htmltime(modtime))
-
-                    if req.get("If-Modified-Since"):
-                        expect = fromhtmltime(req.get("If-Modified-Since"))
-                        if expect >= modtime:
-                            res.status(codes.NOT_MODIFIED).send()
-                            break
-
-                    res.set("Content-Type", mime)
-                    if req.method == "GET":
-                        with open(path, "rb") as fp:
-                            success = res.send(fp.read())
-                            if not success: break
-                    else:
-                        res.send()
-
-                    # TODO: replace with proper implementation
-                    #msg = "Hello, world!\r\n"
-                    #success = res.send(msg)
-                    #if not success: break
-                else:
-                    res.status(codes.NOT_IMPLEMENTED).set("Allow", "GET").send()
-                    break
-
-                if req.headers.get("Connection", "").lower() == "close":
-                    break
-                if req.headers.get("Connection", "").lower() == "keep-alive":
-                    self.conn.settimeout(None)
-
-            except (ProtocolError, BrokenPipeError, OSError, socket.timeout) as e:
-                print(e, file=sys.stderr)
-                break
-
-            if self.closed: break
+            err = router(req, req.response)
+            if err: break
 
         return self.close()
 

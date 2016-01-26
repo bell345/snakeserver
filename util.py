@@ -54,6 +54,22 @@ BLANK_LINE_RE = re.compile(rb'\r?\n\r?\n')
 class ProtocolError(Exception):
     pass
 
+class ResponseError(Exception):
+    pass
+
+class HTTPError(ResponseError):
+
+    def __init__(self, code, message=None):
+        self.code = code
+        self.message = message
+
+    def handler(self, req, res):
+        res.status(self.code).send()
+        return True
+
+    def __repr__(self):
+        return "<HTTPError {}: {}>".format(self.code, HTTP_CODES.get(self.code, "Error Code Not Implemented"))
+
 def htmltime(dt):
     return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
 

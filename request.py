@@ -15,6 +15,8 @@ class Request:
         self.response = Response(self)
         self.method = None
         self.fullpath = None
+        self.base = None
+        self.path = None
         self.version = "1.0"
         self.raw = b''
         self.payload = b''
@@ -34,6 +36,7 @@ class Request:
             success = self._recv_payload(self.headers)
             if self.get("Content-Length") != "0" and not success: return
 
+        print("recv <{}:{}>: {}".format(self.addr[0], self.addr[1], str(self)))
         self.processed = True
 
     def get(self, key, default=None):
@@ -80,7 +83,6 @@ class Request:
             content_length = int(self.get("Content-Length"))
         except ValueError:
             self.response.status(codes.BAD_REQUEST).send("Invalid Content-Length\r\n")
-            self.server.close()
             return False
 
         new_data = self.consume(max_length=max(-1, content_length - len(payload)))
@@ -113,7 +115,6 @@ class Request:
 
             if self.version >= "1.1" and "Host" not in self.headers:
                 self.response.status(codes.BAD_REQUEST).send("Host header required\r\n")
-                self.server.close()
                 return False
 
             host = self.headers.get("Host", ":".join(map(str, self.conn.getsockname())))
@@ -128,7 +129,6 @@ class Request:
 
         except (IndexError, ValueError, UnicodeDecodeError, AttributeError) as e:
             self.response.status(codes.BAD_REQUEST).send("Malformed headers\r\n")
-            self.server.close()
             return False
 
         return True
