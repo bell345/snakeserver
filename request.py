@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import socket
 from urllib.parse import urlparse, unquote
 
@@ -26,15 +27,30 @@ class Request:
 
         self.processed = False
 
-        req = self._recv_request()
-        if not req: return
+        try:
+            req = self._recv_request()
+            if not req: return
 
-        success = self._parse_headers(req)
-        if not success: return
+            success = self._parse_headers(req)
+            if not success: return
 
-        if "Content-Length" in self.headers:
-            success = self._recv_payload(self.headers)
-            if self.get("Content-Length") != "0" and not success: return
+            if "Content-Length" in self.headers:
+                success = self._recv_payload()
+                if self.get("Content-Length") != "0" and not success: return
+
+        except ProtocolError:
+            self = None
+            return self
+
+        except (BrokenPipeError, OSError, socket.timeout) as e:
+            print(e, file=sys.stderr)
+            self = None
+            return self
+
+        except HTTPError as e:
+            e.handler(self, self.response)
+            self = None
+            return self
 
         print("recv <{}:{}>: {}".format(self.addr[0], self.addr[1], str(self)))
         self.processed = True
@@ -79,13 +95,15 @@ class Request:
         return req
 
     def _recv_payload(self):
+        if "Content-Length" not in self.headers:
+            raise HTTPError(codes.LENGTH_REQUIRED)
+
         try:
             content_length = int(self.get("Content-Length"))
         except ValueError:
-            self.response.status(codes.BAD_REQUEST).send("Invalid Content-Length\r\n")
-            return False
+            raise HTTPError(codes.BAD_REQUEST, "Invalid Content-Length\r\n")
 
-        new_data = self.consume(max_length=max(-1, content_length - len(payload)))
+        new_data = self.consume(max_length=max(-1, content_length - len(self.payload)))
         self.raw += new_data
         self.payload += new_data
 
@@ -114,8 +132,7 @@ class Request:
                 self.headers[key.title().decode("ascii")] = value.decode("ascii")
 
             if self.version >= "1.1" and "Host" not in self.headers:
-                self.response.status(codes.BAD_REQUEST).send("Host header required\r\n")
-                return False
+                raise HTTPError(codes.BAD_REQUEST, "Host header required\r\n")
 
             host = self.headers.get("Host", ":".join(map(str, self.conn.getsockname())))
             if ":" not in host:
@@ -128,8 +145,7 @@ class Request:
             self.url = "http://" + self.host + port_url + self.fullpath
 
         except (IndexError, ValueError, UnicodeDecodeError, AttributeError) as e:
-            self.response.status(codes.BAD_REQUEST).send("Malformed headers\r\n")
-            return False
+            raise HTTPError(codes.BAD_REQUEST, "Malformed headers\r\n")
 
         return True
 

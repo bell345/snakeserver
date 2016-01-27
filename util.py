@@ -64,7 +64,7 @@ class HTTPError(ResponseError):
         self.message = message
 
     def handler(self, req, res):
-        res.status(self.code).send()
+        res.status(self.code).send(self.message or None)
         return True
 
     def __repr__(self):

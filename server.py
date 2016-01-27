@@ -37,14 +37,7 @@ class HTTPServer:
         router.use(not_found)
 
         while True:
-            try:
-                req = Request(self)
-            except ProtocolError:
-                break
-            except (BrokenPipeError, OSError, socket.timeout) as e:
-                print(e, file=sys.stderr)
-                break
-
+            req = Request(self)
             if not req or self.closed: break
 
             err = router(req, req.response)
