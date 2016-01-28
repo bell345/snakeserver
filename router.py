@@ -125,6 +125,12 @@ class Router:
 
     def __call__(self, req, res):
 
+        if req.headers.get("Connection", "").lower() == "close":
+            res.set("Connection", "close")
+        if req.headers.get("Connection", "").lower() == "keep-alive":
+            req.conn.settimeout(None)
+            res.set("Connection", "keep-alive")
+
         matches = [r for r in self.stack if r.matches(req)]
 
         try:
@@ -156,5 +162,3 @@ class Router:
 
         if req.headers.get("Connection", "").lower() == "close":
             return True
-        if req.headers.get("Connection", "").lower() == "keep-alive":
-            req.conn.settimeout(None)

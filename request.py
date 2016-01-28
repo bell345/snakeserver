@@ -145,6 +145,12 @@ class Request:
             port_url = ":{}".format(self.port) if self.port != 80 else ""
             self.url = "http://" + self.host + port_url + self.fullpath
 
+            self.accept_encodings = HTTPNegotiation(self.get("Accept-Encoding"))
+            self.accept_formats   = HTTPNegotiation(self.get("Accept"))
+            self.accept_charsets  = HTTPNegotiation(self.get("Accept-Charset"))
+            self.accept_languages = HTTPNegotiation(self.get("Accept-Language"))
+            self.accept_te        = HTTPNegotiation(self.get("TE"))
+
         except (IndexError, ValueError, UnicodeDecodeError, AttributeError) as e:
             raise HTTPError(codes.BAD_REQUEST, "Malformed headers\r\n")
 

@@ -7,7 +7,7 @@ import atexit
 import argparse
 import threading
 
-__version__ = (0, 4, 0)
+__version__ = (0, 5, 0)
 __version_info__ = ".".join(map(str, __version__))
 
 APP_NAME = "snakeserver"
