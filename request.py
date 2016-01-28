@@ -11,6 +11,7 @@ class Request:
 
     def __init__(self, server):
         self.server = server
+        self.config = server.config
         self.conn = server.conn
         self.addr = server.addr
         self.response = Response(self)

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+import os
+import mimetypes
+mimetypes.init()
+from datetime import datetime
+
 from __main__ import APP_NAME, APP_VERSION, PYTHON_VERSION
 from util import *
 
@@ -7,6 +12,7 @@ class Response:
 
     def __init__(self, req):
         self.server = req.server
+        self.config = req.config
         self.request = req
         self.conn = req.conn
         self.addr = req.addr
@@ -74,7 +80,7 @@ class Response:
 
         if payload is not None:
             if type(payload) == str:
-                payload = payload.encode("utf-8")
+                payload = payload.encode(self.config.get("encoding") or "utf-8")
 
             self.conn.sendall(payload)
             print("send <{}:{}>: {} {} bytes".format(
@@ -83,6 +89,26 @@ class Response:
         self.body_sent = True
         return self
 
+    def send_file(self, filename):
+        mime, encoding = mimetypes.guess_type(filename)
+        modtime = datetime.fromtimestamp(int(os.path.getmtime(filename)))
+        self.set("Last-Modified", htmltime(modtime))
+
+        if self.request.get("If-Modified-Since"):
+            expect = fromhtmltime(self.request.get("If-Modified-Since"))
+            if expect >= modtime:
+                raise HTTPError(codes.NOT_MODIFIED)
+
+        self.set("Content-Type", mime or self.config.get("default_type") or "application/octet-stream")
+        if self.request.method == "GET":
+            with open(filename, "rb") as fp:
+                self.send(fp.read())
+        else:
+            self.send()
+
+    def redirect(self, location):
+        self.set("Location", location)
+        raise HTTPError(codes.MOVED_PERMANENTLY)
 
     def end(self):
         if not self.server.closed:

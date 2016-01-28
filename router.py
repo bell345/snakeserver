@@ -32,7 +32,11 @@ def static(static_prefix):
             path = os.path.join(static_prefix, static_path)
 
             if os.path.isdir(path):
-                for poss in ["index.html", "index.htm", ""]:
+                if not req.path.endswith("/"):
+                    res.redirect(req.path + "/")
+                    return
+
+                for poss in req.config.get("index", ["index.html", "index.htm"]):
                     newpath = os.path.join(path, poss)
                     if os.path.isfile(newpath):
                         path = newpath
@@ -40,21 +44,7 @@ def static(static_prefix):
             if not os.path.isfile(path):
                 return True
 
-            mime, encoding = mimetypes.guess_type(path)
-            modtime = datetime.fromtimestamp(int(os.path.getmtime(path)))
-            res.set("Last-Modified", htmltime(modtime))
-
-            if req.get("If-Modified-Since"):
-                expect = fromhtmltime(req.get("If-Modified-Since"))
-                if expect >= modtime:
-                    raise HTTPError(codes.NOT_MODIFIED)
-
-            res.set("Content-Type", mime)
-            if req.method == "GET":
-                with open(path, "rb") as fp:
-                    res.send(fp.read())
-            else:
-                res.send()
+            res.send_file(path)
         else:
             res.set("Allow", "GET, HEAD")
             raise HTTPError(codes.METHOD_NOT_ALLOWED)

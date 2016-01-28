@@ -1,57 +1,49 @@
 #!/usr/bin/env python3
 
-import os
+import sys
 import socket
 import threading
-import mimetypes
-mimetypes.init()
-from datetime import datetime
-from urllib.parse import urlparse
 
 from util import *
-from request import Request
-from router import Router, static, not_found
+from connection import HTTPConnection
 
-servers = []
-
-def open_server(*args, **kwargs):
-    servers.append(HTTPServer(*args, **kwargs))
-
-class HTTPServer:
-    """A class that handles a single HTTP conversation to a TCP client.
-
-    Supports sending and receiving well-formed messages in the event of success or failure.
-    """
+class TCPServer:
 
     closed = False
-    def __init__(self, conn, addr, timeout=None):
-        conn.settimeout(timeout)
-        self.conn = conn
-        self.addr = addr
-        self.thread = threading.Thread(target=self._worker, daemon=True)
+    def __init__(self, config):
+        self.config = config
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connections = []
+        self.thread = threading.Thread(target=self._worker)
         self.thread.start()
+        print("Started server")
 
     def _worker(self):
-        router = Router()
-        router.use(static("/srv/http/80"))
-        router.use(not_found)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((self.config.get("host", ""), self.config.get("port", 80)))
+        self.sock.listen(self.config.get("max_connections", 32))
 
         while True:
-            req = Request(self)
-            if not req or self.closed: break
+            conn, addr = self.sock.accept()
 
-            err = router(req, req.response)
-            if err: break
+            if len(self.connections) < self.config.get("max_connections", 32):
+                self.connections.append(HTTPConnection(self, (conn, addr)))
+                print("open <{}:{}>: ({} total)".format(addr[0], addr[1], len(self.connections)))
+            else:
+                try:
+                    code = codes.SERVICE_UNAVAILABLE
+                    conn.sendall("HTTP/1.1 {} {}\r\n\r\n".format(code, HTTP_CODES.get(code, "")).encode("ascii"))
+                    conn.close()
+                except (BrokenPipeError, OSError, socket.timeout):
+                    pass
 
-        return self.close()
 
     def close(self):
-        global servers
         if not self.closed:
+            for conn in self.connections:
+                if conn: conn.close()
+            self.sock.close()
             self.closed = True
-            servers = [s for s in servers if s]
-            print("term <{}:{}>: ({} left)".format(self.addr[0], self.addr[1], len(servers)))
-            self.conn.close()
 
     def __bool__(self):
         return not self.closed
