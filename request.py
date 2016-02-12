@@ -40,18 +40,15 @@ class Request:
                 if self.get("Content-Length") != "0" and not success: return
 
         except ProtocolError:
-            self = None
-            return self
+            return
 
         except (BrokenPipeError, OSError, socket.timeout) as e:
             print(e, file=sys.stderr)
-            self = None
-            return self
+            return
 
         except HTTPError as e:
             e.handler(self, self.response)
-            self = None
-            return self
+            return
 
         print("recv <{}:{}>: {}".format(self.addr[0], self.addr[1], str(self)))
         self.processed = True

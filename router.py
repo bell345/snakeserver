@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import re
 import os
+import sys
 import socket
 import mimetypes
 mimetypes.init()
@@ -32,8 +32,8 @@ def static(static_prefix):
             path = os.path.join(static_prefix, static_path)
 
             if os.path.isdir(path):
-                if not req.path.endswith("/"):
-                    res.redirect(req.path + "/")
+                if not req.fullpath.endswith("/"):
+                    res.redirect(req.fullpath + "/")
                     return
 
                 for poss in req.config.get("index", ["index.html", "index.htm"]):
@@ -58,7 +58,7 @@ class Route:
 
     def __init__(self, method, pattern, f):
         self.method = method
-        if pattern == None:
+        if pattern is None:
             self.pattern = EMPTY_RE
         elif type(pattern) == str:
             self.pattern = path_to_regexp(pattern)
@@ -148,7 +148,7 @@ class Router:
 
         except ResponseError as e:
             try:
-                if (e.handler(req, res) if e.handler else True):
+                if e.handler(req, res):
                     for handler in self.error_handlers:
                         if not handler(e, req, res):
                             break

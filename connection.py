@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import os
-import socket
 import threading
-from urllib.parse import urlparse
 
 from util import *
 from request import Request

@@ -2,7 +2,27 @@
 
 import re
 from datetime import datetime
-from http import HTTPStatus as codes
+
+def determine_status_codes():
+    try:
+        from http import HTTPStatus as status_codes
+    except ImportError:
+        try:
+            import http.client as status_codes
+        except ImportError:
+            status_codes = None
+
+    if status_codes is None:
+        status_codes = {}
+        _SEP_RE = re.compile(r'[ \-]')
+        for code, desc in HTTP_CODES.items():
+            key = "_".join(_SEP_RE.split(desc.upper()))
+            setattr(status_codes, key, code)
+
+        return status_codes
+    else:
+        return status_codes
+
 
 HTTP_CODES = {
     100: "Continue",
@@ -53,11 +73,14 @@ BLANK_LINE_RE  = re.compile(rb'\r?\n\r?\n')
 COMMA_RE       = re.compile(r', *')
 SEMICOLON_RE   = re.compile(r'; *')
 
+codes = determine_status_codes()
+
 class ProtocolError(Exception):
     pass
 
 class ResponseError(Exception):
-    pass
+    def handler(self, req, res):
+        return True
 
 class HTTPError(ResponseError):
 
@@ -86,7 +109,7 @@ class HTTPNegotiation:
             else:
                 q = float(v[:5])
 
-        return (val, q)
+        return val, q
 
     empty = False
     missing = False

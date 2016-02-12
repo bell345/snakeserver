@@ -2,12 +2,10 @@
 
 import sys
 import json
-import socket
 import atexit
 import argparse
-import threading
 
-__version__ = (0, 5, 0)
+__version__ = (0, 5, 1)
 __version_info__ = ".".join(map(str, __version__))
 
 APP_NAME = "snakeserver"
@@ -42,7 +40,6 @@ DEFAULT_CONFIG = {
     ]
 }
 
-from util import *
 from server import TCPServer
 
 servers = []
