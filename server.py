@@ -11,7 +11,8 @@ class TCPServer:
     closed = False
     def __init__(self, config):
         self.config = config
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        af = socket.AF_INET6 if config.get("ipv6", False) else socket.AF_INET
+        self.sock = socket.socket(af, socket.SOCK_STREAM)
         self.connections = []
         self.thread = threading.Thread(target=self._worker)
         self.thread.start()

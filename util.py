@@ -67,7 +67,7 @@ HTTP_CODES = {
     504: "Gateway Timeout",
     505: "HTTP Version Not Supported"
 }
-STATUS_LINE_RE = re.compile(r'^([A-Z]+) ([^\x00-\x20<>#%"]+)(?: HTTP/([0-9A-Za-z.]+))?$')
+STATUS_LINE_RE = re.compile(r'^([A-Z]+) ([^\x00-\x20<>#"]+)(?: HTTP/([0-9A-Za-z.]+))?$')
 NEWLINE_RE     = re.compile(rb'\r?\n')
 BLANK_LINE_RE  = re.compile(rb'\r?\n\r?\n')
 COMMA_RE       = re.compile(r', *')

@@ -5,7 +5,7 @@ import json
 import atexit
 import argparse
 
-__version__ = (0, 5, 1)
+__version__ = (0, 5, 2)
 __version_info__ = ".".join(map(str, __version__))
 
 APP_NAME = "snakeserver"
@@ -14,7 +14,7 @@ APP_VERSION = __version_info__
 PYTHON_VERSION = ".".join(map(str, sys.version_info[:3]))
 
 DEFAULT_CONFIG = {
-    'max_connections': 64,
+    'max_connections': 32,
     'timeout': 15,
     'default_type': "application/octet-stream",
     "charset": "utf-8",
@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
     'servers': [
         {
             "port": 8086,
+            "ipv6": True,
             "locations": {
                 "/": {
                     "root": "/srv/http/80"
