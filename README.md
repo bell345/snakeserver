@@ -11,7 +11,7 @@ set of defaults has been provided for my own use, but this configuration will
 be needed to get more than a few predetermined locations.
 
 Run the program through the `python3` interpreter
-(`python3 path/to/snakeserver` -c <config file destination>).
+(`python3 path/to/snakeserver -c <config file destination>`).
 
 ## Configuration
 
@@ -61,7 +61,7 @@ The port that the server will listen on for new connections. Defaults to 80.
 
 #### `host`
 The host that the server will listen on for new connections. Defaults to 
-`''` (empty string), a symbolic constant for all local interfaces.
+`""` (empty string), a symbolic constant for all local interfaces.
 
 #### `ipv6`
 A boolean variable indicating whether or not the server should listen using
@@ -69,7 +69,9 @@ IPV6 instead of IPV4. Defaults to false.
 
 #### `locations`
 A dictionary of path mappings to objects representing a single route the
-request can be matched to, in a similar way to [express](express.js).
+request can be matched to in similar way to [express](express.js). Note:
+this object must have at least a single route on it otherwise nothing
+gets served. Use `"/"` to match all requests.
 
 #### `root (route level)`
 The only thing a route can do right now using this configuration is serve
