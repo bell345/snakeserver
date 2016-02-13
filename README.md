@@ -26,7 +26,7 @@ The following is a brief rundown of the configuration format.
 
 #### `max_connections`
 This represents the maximum number of simultaneous connections for each TCP 
-server you specify. Defaults to 64.
+server you specify. Defaults to 32.
 
 #### `timeout`
 For each new connection made, this is the number of seconds the server will
@@ -60,8 +60,8 @@ connections. The default serves `localhost:8086` with the contents of
 The port that the server will listen on for new connections. Defaults to 80.
 
 #### `host`
-The host that the server will listen on for new connections. Defaults to '',
-a symbolic constant for all local interfaces.
+The host that the server will listen on for new connections. Defaults to 
+`''` (empty string), a symbolic constant for all local interfaces.
 
 #### `ipv6`
 A boolean variable indicating whether or not the server should listen using
